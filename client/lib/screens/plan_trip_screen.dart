@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../constants/app_colors.dart';
+import 'road_view_screen.dart';
 
 class PlanTripScreen extends StatefulWidget {
   const PlanTripScreen({super.key});
@@ -306,6 +307,75 @@ class _DestinationsCard extends StatelessWidget {
   }
 }
 
+// class _StickyStartArea extends StatelessWidget {
+//   const _StickyStartArea();
+
+//   @override
+//   Widget build(BuildContext context) {
+//     return SafeArea(
+//       top: false,
+//       child: Padding(
+//         padding: const EdgeInsets.all(16),
+//         child: Column(
+//           mainAxisSize: MainAxisSize.min,
+//           children: [
+//             Container(
+//               width: double.infinity,
+//               height: 56,
+//               decoration: BoxDecoration(
+//                 gradient: const LinearGradient(
+//                   colors: [AppColors.gold, AppColors.goldDark],
+//                 ),
+//                 borderRadius: BorderRadius.circular(28),
+//                 boxShadow: [
+//                   BoxShadow(
+//                     color: AppColors.gold.withValues(alpha: 0.3),
+//                     blurRadius: 20,
+//                   ),
+//                 ],
+//               ),
+//               child: Row(
+//                 mainAxisAlignment: MainAxisAlignment.center,
+//                 children: [
+//                   const Icon(
+//                     Icons.auto_awesome,
+//                     color: AppColors.background,
+//                     size: 20,
+//                   ),
+//                   const SizedBox(width: 8),
+//                   Text(
+//                     'START GAME',
+//                     softWrap: true,
+//                     overflow: TextOverflow.visible,
+//                     style: GoogleFonts.inter(
+//                       fontSize: 15,
+//                       fontWeight: FontWeight.bold,
+//                       letterSpacing: 2,
+//                       color: AppColors.background,
+//                       fontFeatures: const [FontFeature.enable('kern')],
+//                     ),
+//                   ),
+//                 ],
+//               ),
+//             ),
+//             const SizedBox(height: 8),
+//             Text(
+//               'Select at least one destination',
+//               textAlign: TextAlign.center,
+//               softWrap: true,
+//               overflow: TextOverflow.visible,
+//               style: GoogleFonts.inter(
+//                 fontSize: 12,
+//                 color: AppColors.secondary,
+//                 fontFeatures: const [FontFeature.enable('kern')],
+//               ),
+//             ),
+//           ],
+//         ),
+//       ),
+//     );
+//   }
+// }
 class _StickyStartArea extends StatelessWidget {
   const _StickyStartArea();
 
@@ -318,43 +388,53 @@ class _StickyStartArea extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: double.infinity,
-              height: 56,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [AppColors.gold, AppColors.goldDark],
-                ),
-                borderRadius: BorderRadius.circular(28),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.gold.withValues(alpha: 0.3),
-                    blurRadius: 20,
+            GestureDetector(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const RoadViewScreen(),
                   ),
-                ],
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(
-                    Icons.auto_awesome,
-                    color: AppColors.background,
-                    size: 20,
+                );
+              },
+              child: Container(
+                width: double.infinity,
+                height: 56,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [AppColors.gold, AppColors.goldDark],
                   ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'START GAME',
-                    softWrap: true,
-                    overflow: TextOverflow.visible,
-                    style: GoogleFonts.inter(
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 2,
-                      color: AppColors.background,
-                      fontFeatures: const [FontFeature.enable('kern')],
+                  borderRadius: BorderRadius.circular(28),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.gold.withValues(alpha: 0.3),
+                      blurRadius: 20,
                     ),
-                  ),
-                ],
+                  ],
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(
+                      Icons.auto_awesome,
+                      color: AppColors.background,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'START GAME',
+                      softWrap: true,
+                      overflow: TextOverflow.visible,
+                      style: GoogleFonts.inter(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 2,
+                        color: AppColors.background,
+                        fontFeatures: const [FontFeature.enable('kern')],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
             const SizedBox(height: 8),

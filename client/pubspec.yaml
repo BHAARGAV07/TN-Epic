@@ -1,3 +1,29 @@
+# name: client
+# description: "TN-Epic Flutter app."
+# publish_to: 'none'
+
+# version: 1.0.0+1
+
+# environment:
+#   sdk: ^3.12.2
+
+# dependencies:
+#   flutter:
+#     sdk: flutter
+#   google_fonts: ^6.2.1
+
+# dev_dependencies:
+#   flutter_test:
+#     sdk: flutter
+
+# flutter:
+#   uses-material-design: true
+
+# dependencies:
+#   flutter:
+#     sdk: flutter
+#   camera: ^0.11.0
+
 name: client
 description: "TN-Epic Flutter app."
 publish_to: 'none'
@@ -11,6 +37,7 @@ dependencies:
   flutter:
     sdk: flutter
   google_fonts: ^6.2.1
+  camera: ^0.11.0
 
 dev_dependencies:
   flutter_test:
