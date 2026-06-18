@@ -230,13 +230,16 @@ class _ArViewportState extends State<ArViewport> with SingleTickerProviderStateM
 
   @override
   Widget build(BuildContext context) {
+    // IMPORTANT: Never call setState (or anything that triggers parent setState)
+    // directly from build(). Instead defer to a post-frame callback so the
+    // current frame finishes before any checkpoint collection triggers a rebuild.
     if (widget.isFloorDetected && !_isSimulatingWalk) {
-      _checkQuestNodeCollection();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _checkQuestNodeCollection();
+      });
     }
 
     // Calculate camera pitch downward angle to display in warning HUD
-    // _pitch is between -60° (looking straight down) and 60° (looking straight up).
-    // Pitch downward is positive when tilting the top of the phone towards the ground.
     final pitchDownward = -_pitch;
     final bool isLookingDown = pitchDownward >= 20.0;
 
@@ -251,7 +254,7 @@ class _ArViewportState extends State<ArViewport> with SingleTickerProviderStateM
       },
       child: Stack(
         children: [
-          // 3D Rendering Layer
+          // 3D Rendering Layer — SizedBox.expand forces correct size on Flutter Web
           Positioned.fill(
             child: AnimatedBuilder(
               animation: _animationController,
@@ -272,6 +275,8 @@ class _ArViewportState extends State<ArViewport> with SingleTickerProviderStateM
                     animationValue: _animationController.value,
                     isFloorDetected: widget.isFloorDetected,
                   ),
+                  // child forces the CustomPaint to fill the parent on web
+                  child: const SizedBox.expand(),
                 );
               },
             ),
@@ -581,66 +586,86 @@ class ArPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) return;
     final double f = (size.width / 2.0) / tan((_fov / 2.0) * pi / 180.0);
 
-    // 1. Draw the floor plane scanning grid if floor is detected
-    if (isFloorDetected) {
-      _drawFloorPlaneGrid(canvas, size, f);
-    }
+    // 0. Draw dark AR background gradient so road is always visible
+    _drawARBackground(canvas, size);
 
-    // Gating check: calculate road opacity based on camera pitch
+    if (!isFloorDetected) return;
+
+    // 1. Draw the floor plane scanning grid
+    _drawFloorPlaneGrid(canvas, size, f);
+
+    // Road is always visible when floor is detected (no pitch gating)
+    // Soft opacity still based on pitch for a natural feel,
+    // but minimum 0.7 so road is always clearly visible
     final double pitchDownward = -pitch;
-    double roadOpacity = 0.0;
-    if (pitchDownward > 20.0) {
-      roadOpacity = ((pitchDownward - 20.0) / 15.0).clamp(0.0, 1.0);
-    }
+    final double roadOpacity = pitchDownward > 20.0
+        ? ((pitchDownward - 20.0) / 15.0).clamp(0.7, 1.0)
+        : 0.7; // Always at least 70% visible
 
-    if (isFloorDetected && roadOpacity > 0.0) {
-      // 2. Draw the Golden Road Mesh
-      _drawCorridorRoad(canvas, size, f, roadOpacity);
-      
-      // 3. Draw Corridor Wall boundaries
-      _drawWallBoundaries(canvas, size, f, roadOpacity);
-    }
+    // 2. Draw the Golden Road Mesh
+    _drawCorridorRoad(canvas, size, f, roadOpacity);
 
-    if (isFloorDetected) {
-      // 4. Draw Save Points & Beacons
-      _drawQuestStructures(canvas, size, f);
+    // 3. Draw Corridor Wall boundaries
+    _drawWallBoundaries(canvas, size, f, roadOpacity);
 
-      // 5. Draw Coins
-      _drawCoins(canvas, size, f);
+    // 4. Draw Save Points & Beacons
+    _drawQuestStructures(canvas, size, f);
 
-      // 6. Draw collection particle bursts
-      _drawParticleBursts(canvas, size, f);
-    }
+    // 5. Draw Coins
+    _drawCoins(canvas, size, f);
+
+    // 6. Draw collection particle bursts
+    _drawParticleBursts(canvas, size, f);
+  }
+
+  void _drawARBackground(Canvas canvas, Size size) {
+    // Draw a dark gradient AR background so the road is always visible
+    final bgPaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          const Color(0xFF060E1F),
+          const Color(0xFF0A1628),
+          const Color(0xFF0D1B3E).withOpacity(0.85),
+        ],
+      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), bgPaint);
+
+    // Subtle horizon glow line at the midpoint
+    final horizonY = size.height * 0.45;
+    final horizonPaint = Paint()
+      ..color = Colors.cyanAccent.withOpacity(0.04)
+      ..strokeWidth = 1.0
+      ..style = PaintingStyle.stroke;
+    canvas.drawLine(Offset(0, horizonY), Offset(size.width, horizonY), horizonPaint);
   }
 
   void _drawFloorPlaneGrid(Canvas canvas, Size size, double f) {
     final gridPaint = Paint()
-      ..color = Colors.cyan.withOpacity(0.08)
+      ..color = Colors.cyan.withOpacity(0.15)
       ..strokeWidth = 1.0
       ..style = PaintingStyle.stroke;
 
-    // Generate horizontal and vertical floor lines around the user (z = -1.6)
-    // We draw local X lines from -3m to +3m and local Y lines from 0 to +25m relative to user Y
     final double userFloorY = userPosition.y;
 
-    // Horizontal grid lines (parallel to X axis) every 2.0 meters
+    // Horizontal grid lines every 2m
     final double startY = (userFloorY / 2.0).floor() * 2.0;
     for (double gy = startY; gy <= userFloorY + _maxRenderDist; gy += 2.0) {
       final pA = _enuToCamera(Vector3(-2.5, gy, -1.6), userPosition, heading, pitch);
       final pB = _enuToCamera(Vector3(2.5, gy, -1.6), userPosition, heading, pitch);
-
       if (pA.dy > 0.1 && pB.dy > 0.1) {
         canvas.drawLine(_project(pA, f, size), _project(pB, f, size), gridPaint);
       }
     }
 
-    // Vertical grid lines (parallel to Y axis) every 1.25 meters
+    // Vertical grid lines every 1.25m
     for (double gx = -2.5; gx <= 2.5; gx += 1.25) {
       final pA = _enuToCamera(Vector3(gx, userFloorY, -1.6), userPosition, heading, pitch);
       final pB = _enuToCamera(Vector3(gx, userFloorY + _maxRenderDist, -1.6), userPosition, heading, pitch);
-
       if (pA.dy > 0.1 && pB.dy > 0.1) {
         canvas.drawLine(_project(pA, f, size), _project(pB, f, size), gridPaint);
       }
@@ -654,11 +679,9 @@ class ArPainter extends CustomPainter {
     final List<Offset> rightProjPoints = [];
     final List<double> segmentDepths = [];
 
-    // Calculate left/right coordinate vertices of corridor centerline
     for (int i = 0; i < roadWaypoints.length; i++) {
       final pt = roadWaypoints[i];
-      
-      // Interpolate tangent direction
+
       double perpX = -1.0;
       double perpY = 0.0;
       if (i < roadWaypoints.length - 1) {
@@ -666,46 +689,32 @@ class ArPainter extends CustomPainter {
         final dx = next.x - pt.x;
         final dy = next.y - pt.y;
         final len = sqrt(dx * dx + dy * dy);
-        if (len > 0.1) {
-          perpX = -dy / len;
-          perpY = dx / len;
-        }
+        if (len > 0.1) { perpX = -dy / len; perpY = dx / len; }
       } else if (i > 0) {
         final prev = roadWaypoints[i - 1];
         final dx = pt.x - prev.x;
         final dy = pt.y - prev.y;
         final len = sqrt(dx * dx + dy * dy);
-        if (len > 0.1) {
-          perpX = -dy / len;
-          perpY = dx / len;
-        }
+        if (len > 0.1) { perpX = -dy / len; perpY = dx / len; }
       }
 
-      final leftPt = Vector3(
-        pt.x + perpX * (_roadWidth / 2.0),
-        pt.y + perpY * (_roadWidth / 2.0),
-        -1.6, // anchored to floor
-      );
-      final rightPt = Vector3(
-        pt.x - perpX * (_roadWidth / 2.0),
-        pt.y - perpY * (_roadWidth / 2.0),
-        -1.6,
-      );
+      final leftPt  = Vector3(pt.x + perpX * (_roadWidth / 2.0), pt.y + perpY * (_roadWidth / 2.0), -1.6);
+      final rightPt = Vector3(pt.x - perpX * (_roadWidth / 2.0), pt.y - perpY * (_roadWidth / 2.0), -1.6);
 
-      final leftCam = _enuToCamera(leftPt, userPosition, heading, pitch);
+      final leftCam  = _enuToCamera(leftPt,  userPosition, heading, pitch);
       final rightCam = _enuToCamera(rightPt, userPosition, heading, pitch);
 
       final avgDepth = (leftCam.dy + rightCam.dy) / 2.0;
-      if (avgDepth > _maxRenderDist) continue;
+      // Skip behind-camera and too-far points
+      if (avgDepth <= 0.1 || avgDepth > _maxRenderDist) continue;
 
-      leftProjPoints.add(_project(leftCam, f, size));
+      leftProjPoints.add(_project(leftCam,  f, size));
       rightProjPoints.add(_project(rightCam, f, size));
       segmentDepths.add(avgDepth);
     }
 
     if (leftProjPoints.length < 2) return;
 
-    // Draw the roadway segments
     for (int i = 0; i < leftProjPoints.length - 1; i++) {
       final depth = segmentDepths[i];
       if (depth < 0.2) continue;
@@ -715,7 +724,10 @@ class ArPainter extends CustomPainter {
       final p3 = rightProjPoints[i + 1];
       final p4 = leftProjPoints[i + 1];
 
-      // Poly mesh path
+      final fade = (1.0 - (depth / _maxRenderDist)).clamp(0.0, 1.0);
+      final finalOpacity = roadOpacity * fade;
+
+      // Road surface fill — significantly more visible now
       final path = Path()
         ..moveTo(p1.dx, p1.dy)
         ..lineTo(p2.dx, p2.dy)
@@ -723,40 +735,40 @@ class ArPainter extends CustomPainter {
         ..lineTo(p4.dx, p4.dy)
         ..close();
 
-      final fade = (1.0 - (depth / _maxRenderDist)).clamp(0.0, 1.0);
-      final finalOpacity = roadOpacity * fade;
-
       final fillPaint = Paint()
-        ..color = AppColors.gold.withOpacity(finalOpacity * 0.22)
+        ..color = AppColors.gold.withOpacity(finalOpacity * 0.55)
         ..style = PaintingStyle.fill;
       canvas.drawPath(path, fillPaint);
 
-      // Bright glowing border lines
+      // Bright glowing border edges
+      final strokeW = (6.0 / (depth * 0.2 + 1.0)).clamp(2.0, 5.0);
       final borderPaint = Paint()
-        ..shader = LinearGradient(
-          colors: [
-            AppColors.gold.withOpacity(finalOpacity * 0.85),
-            AppColors.goldDark.withOpacity(finalOpacity * 0.4),
-          ],
-        ).createShader(Rect.fromPoints(p1, p4))
-        ..strokeWidth = (5.0 / (depth * 0.2 + 1.0)).clamp(1.5, 4.0)
+        ..color = AppColors.gold.withOpacity(finalOpacity)
+        ..strokeWidth = strokeW
+        ..strokeCap = StrokeCap.round
         ..style = PaintingStyle.stroke;
-
       canvas.drawLine(p1, p4, borderPaint);
       canvas.drawLine(p2, p3, borderPaint);
 
-      // Animate center line scrolling (scrolling UV overlay)
-      final double dashLength = 30.0;
-      final double dashOffset = animationValue * dashLength * 2.0;
-
-      final centerStart = Offset((p1.dx + p2.dx) / 2, (p1.dy + p2.dy) / 2);
-      final centerEnd = Offset((p3.dx + p4.dx) / 2, (p3.dy + p4.dy) / 2);
-
-      final centerPaint = Paint()
-        ..color = AppColors.text.withOpacity(finalOpacity * 0.8)
-        ..strokeWidth = (2.0 / (depth * 0.2 + 1.0)).clamp(0.8, 2.0)
+      // Outer glow effect on edges
+      final glowPaint = Paint()
+        ..color = AppColors.gold.withOpacity(finalOpacity * 0.3)
+        ..strokeWidth = strokeW * 3
+        ..strokeCap = StrokeCap.round
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6.0)
         ..style = PaintingStyle.stroke;
+      canvas.drawLine(p1, p4, glowPaint);
+      canvas.drawLine(p2, p3, glowPaint);
 
+      // Animated center dashed line
+      final dashLength = 30.0;
+      final dashOffset = animationValue * dashLength * 2.0;
+      final centerStart = Offset((p1.dx + p2.dx) / 2, (p1.dy + p2.dy) / 2);
+      final centerEnd   = Offset((p3.dx + p4.dx) / 2, (p3.dy + p4.dy) / 2);
+      final centerPaint = Paint()
+        ..color = Colors.white.withOpacity(finalOpacity * 0.9)
+        ..strokeWidth = (2.5 / (depth * 0.2 + 1.0)).clamp(1.0, 2.5)
+        ..style = PaintingStyle.stroke;
       _drawDashedLine(canvas, centerStart, centerEnd, centerPaint, dashLength, dashOffset);
     }
   }

@@ -3,7 +3,6 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:lottie/lottie.dart';
 
 import '../constants/app_colors.dart';
 import '../models/destination.dart';
@@ -216,10 +215,13 @@ class _RoadViewScreenState extends State<RoadViewScreen> with TickerProviderStat
             child: _buildHUDHeader(context),
           ),
 
-          // 4. Proximity Collection Celebration Popup
+          // 4. Checkpoint Reward Banner (non-blocking — road stays visible)
           if (_showCollectBanner && _lastCollectedNode != null)
-            Positioned.fill(
-              child: _buildRewardPopup(_lastCollectedNode!),
+            Positioned(
+              top: 90,
+              left: 16,
+              right: 16,
+              child: _buildRewardBanner(_lastCollectedNode!),
             ),
         ],
       ),
@@ -405,10 +407,11 @@ class _RoadViewScreenState extends State<RoadViewScreen> with TickerProviderStat
     );
   }
 
-  Widget _buildRewardPopup(QuestNode node) {
+  /// Compact slide-in banner that overlays the HUD but keeps the road fully visible
+  Widget _buildRewardBanner(QuestNode node) {
     final isCoin = node.type == 'coin';
     final isBeacon = node.type == 'beacon';
-    
+
     String titleText = 'CHOLA GOLD DISCOVERED!';
     if (node.type == 'save_point') {
       titleText = 'CHECKPOINT SECURED!';
@@ -423,129 +426,121 @@ class _RoadViewScreenState extends State<RoadViewScreen> with TickerProviderStat
       glowColor = Colors.cyanAccent;
     }
 
-    return Container(
-      color: Colors.black.withOpacity(0.4),
-      child: Center(
-        child: ScaleTransition(
-          scale: CurvedAnimation(
-            parent: _bannerAnimationController,
-            curve: Curves.elasticOut,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Lottie Animation Burst (network loader with offline canvas placeholder)
-              SizedBox(
-                width: 200,
-                height: 200,
-                child: Lottie.network(
-                  isBeacon
-                      ? 'https://lottie.host/17b9b7e7-3b96-48ee-a616-24faea9f6c04/Oshf4FzIsk.json' // Trophy/Success burst
-                      : (isCoin 
-                          ? 'https://lottie.host/5a0928be-c6e0-4a81-bd56-c73ceb7f14b6/3qUa4FpZ3A.json' // Coin explosion
-                          : 'https://lottie.host/461751db-043e-46cf-abfb-94f4d2f07fa1/3sD3X3o25i.json'), // Checkpoint blast
-                  errorBuilder: (context, error, stackTrace) {
-                    return Center(
-                      child: Container(
-                        width: 100,
-                        height: 100,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: glowColor.withOpacity(0.2),
-                          border: Border.all(
-                            color: glowColor,
-                            width: 2.5,
-                          ),
-                        ),
-                        child: Icon(
-                          isBeacon
-                              ? Icons.flag_circle_rounded
-                              : (isCoin ? Icons.monetization_on : Icons.security),
-                          color: glowColor,
-                          size: 48,
+    final IconData typeIcon = isBeacon
+        ? Icons.flag_circle_rounded
+        : (isCoin ? Icons.monetization_on_rounded : Icons.security);
+
+    final String dharmaText = isBeacon
+        ? '+${(node.value * 2.0).round()} Dharma'
+        : (isCoin ? '+${(node.value * 1.5).round()} Dharma' : '+120 Dharma');
+
+    return SlideTransition(
+      position: Tween<Offset>(
+        begin: const Offset(0, -1.5),
+        end: Offset.zero,
+      ).animate(CurvedAnimation(
+        parent: _bannerAnimationController,
+        curve: Curves.elasticOut,
+      )),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: AppColors.background.withOpacity(0.92),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: glowColor, width: 2.0),
+          boxShadow: [
+            BoxShadow(
+              color: glowColor.withOpacity(0.45),
+              blurRadius: 20,
+              spreadRadius: 1,
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            // Animated icon badge
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: glowColor.withOpacity(0.18),
+                border: Border.all(color: glowColor, width: 1.5),
+              ),
+              child: Icon(typeIcon, color: glowColor, size: 26),
+            ),
+            const SizedBox(width: 12),
+
+            // Text reward info
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    titleText,
+                    style: GoogleFonts.inter(
+                      color: glowColor,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    node.name,
+                    style: GoogleFonts.inter(
+                      color: AppColors.text,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+
+            // Score rewards column
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                if (node.value > 0)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.monetization_on_rounded, color: AppColors.gold, size: 14),
+                      const SizedBox(width: 4),
+                      Text(
+                        '+${node.value}',
+                        style: GoogleFonts.jetBrainsMono(
+                          color: AppColors.text,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 16),
-              
-              // Glassmorphism Reward Banner
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                margin: const EdgeInsets.symmetric(horizontal: 32),
-                decoration: BoxDecoration(
-                  color: AppColors.background.withOpacity(0.9),
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(
-                    color: glowColor,
-                    width: 2.0,
+                    ],
                   ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: glowColor.withOpacity(0.3),
-                      blurRadius: 24,
-                    ),
-                  ],
-                ),
-                child: Column(
+                const SizedBox(height: 2),
+                Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    const Icon(Icons.offline_bolt_rounded, color: Colors.cyanAccent, size: 14),
+                    const SizedBox(width: 4),
                     Text(
-                      titleText,
-                      style: GoogleFonts.inter(
-                        color: glowColor,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 1.5,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      node.name,
-                      style: GoogleFonts.inter(
+                      dharmaText,
+                      style: GoogleFonts.jetBrainsMono(
                         color: AppColors.text,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (node.value > 0) ...[
-                          const Icon(Icons.monetization_on_rounded, color: AppColors.gold, size: 20),
-                          const SizedBox(width: 6),
-                          Text(
-                            '+${node.value} Tokens',
-                            style: GoogleFonts.jetBrainsMono(
-                              color: AppColors.text,
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                        ],
-                        const Icon(Icons.offline_bolt_rounded, color: Colors.cyanAccent, size: 20),
-                        const SizedBox(width: 6),
-                        Text(
-                          isBeacon
-                              ? '+${(node.value * 2.0).round()} Dharma'
-                              : (isCoin ? '+${(node.value * 1.5).round()} Dharma' : '+120 Dharma'),
-                          style: GoogleFonts.jetBrainsMono(
-                            color: AppColors.text,
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
                     ),
                   ],
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
+          ],
         ),
       ),
     );

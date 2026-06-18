@@ -3,30 +3,52 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 
 import '../constants/app_colors.dart';
 import '../constants/map_styles.dart';
 import '../models/destination.dart';
+import '../models/quest_save_state.dart';
+import '../state/quest_state.dart';
 import 'map_search_screen.dart';
 import 'road_view_screen.dart';
 
-class PlanTripScreen extends StatefulWidget {
+class PlanTripScreen extends ConsumerStatefulWidget {
   const PlanTripScreen({super.key});
 
   @override
-  State<PlanTripScreen> createState() => _PlanTripScreenState();
+  ConsumerState<PlanTripScreen> createState() => _PlanTripScreenState();
 }
 
-class _PlanTripScreenState extends State<PlanTripScreen> {
+class _PlanTripScreenState extends ConsumerState<PlanTripScreen> {
   int _days = 1;
   List<Destination> selectedDestinations = [];
   LatLng? currentLocation;
   bool _locationDeniedForever = false;
+  
+  QuestSaveState? _savedState;
+  bool _isStreakPreserved = false;
 
   @override
   void initState() {
     super.initState();
     _initLocation();
+    _checkSavedState();
+  }
+
+  void _checkSavedState() {
+    final box = Hive.box<QuestSaveState>('quest_saves');
+    if (box.containsKey('heritage_corridor_quest')) {
+      final save = box.get('heritage_corridor_quest');
+      if (save != null) {
+        setState(() {
+          _savedState = save;
+          final diff = DateTime.now().difference(save.savedAt).inHours;
+          _isStreakPreserved = diff < 24;
+        });
+      }
+    }
   }
 
   Future<void> _initLocation() async {
@@ -84,6 +106,36 @@ class _PlanTripScreenState extends State<PlanTripScreen> {
         ),
       ),
     );
+  }
+
+  void _startGameFresh() {
+    ref.read(questSessionProvider.notifier).initNewSession();
+    
+    // Clear save
+    final box = Hive.box<QuestSaveState>('quest_saves');
+    box.delete('heritage_corridor_quest');
+    
+    setState(() {
+      _savedState = null;
+      selectedDestinations.clear();
+      selectedDestinations.add(Destination(name: 'Corridor Checkpoint A', lat: 10.7828 + 0.0003, lng: 79.1318 + 0.0003));
+      selectedDestinations.add(Destination(name: 'Corridor Checkpoint B', lat: 10.7828 - 0.0002, lng: 79.1318 + 0.0004));
+    });
+
+    _startGame();
+  }
+
+  void _resumeGame(QuestSaveState save) {
+    ref.read(questSessionProvider.notifier).loadResumedSession(save);
+    
+    setState(() {
+      selectedDestinations.clear();
+      selectedDestinations.add(Destination(name: 'Corridor Checkpoint A', lat: 10.7828 + 0.0003, lng: 79.1318 + 0.0003));
+      selectedDestinations.add(Destination(name: 'Corridor Checkpoint B', lat: 10.7828 - 0.0002, lng: 79.1318 + 0.0004));
+      selectedDestinations.add(Destination(name: 'Chola Sanctuary Beacon', lat: 10.7828 - 0.0004, lng: 79.1318 - 0.0002));
+    });
+
+    _startGame();
   }
 
   @override
