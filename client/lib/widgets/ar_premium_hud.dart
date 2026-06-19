@@ -1,8 +1,6 @@
-import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../constants/app_colors.dart';
-import '../models/quest_node.dart';
 import '../models/vector3.dart';
 
 /// Premium AR HUD overlay for heritage corridor exploration
@@ -36,7 +34,7 @@ class ARPremiumHUD extends StatefulWidget {
 }
 
 class _ARPremiumHUDState extends State<ARPremiumHUD>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late AnimationController _pulseController;
   late AnimationController _slideController;
   late AnimationController _glowController;
@@ -73,8 +71,6 @@ class _ARPremiumHUDState extends State<ARPremiumHUD>
 
   @override
   Widget build(BuildContext context) {
-    final screenSize = MediaQuery.of(context).size;
-
     return Stack(
       children: [
         // LAYER 4A: Top Status Bar with VIO & Telemetry

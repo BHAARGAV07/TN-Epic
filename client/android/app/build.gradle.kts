@@ -41,7 +41,7 @@ kotlin {
 }
 
 dependencies {
-    implementation("com.google.ar.sceneform.ux:sceneform-ux:1.8.0")
+    implementation(files("libs/sceneform-base-1.15.0-fixed.aar"))
 }
 
 flutter {
