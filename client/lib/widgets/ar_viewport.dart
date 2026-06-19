@@ -13,7 +13,7 @@ class ArViewport extends StatefulWidget {
   final List<QuestNode> questNodes;
   final Function(QuestNode) onCollectQuestNode;
   final ValueChanged<Vector3> onLocationChanged;
-  
+
   // Floor scanning state
   final bool isFloorDetected;
   final double scanProgress;
@@ -33,12 +33,15 @@ class ArViewport extends StatefulWidget {
   State<ArViewport> createState() => _ArViewportState();
 }
 
-class _ArViewportState extends State<ArViewport> with SingleTickerProviderStateMixin {
+class _ArViewportState extends State<ArViewport>
+    with SingleTickerProviderStateMixin {
   late AnimationController _animationController;
 
   // Camera view angles (VIO coordinate system)
-  double _heading = 0.0; // Yaw angle (0 = Straight forward, +90 = turn right, -90 = turn left)
-  double _pitch = -35.0; // Pitch angle (starting tilted down so road renders instantly)
+  double _heading =
+      0.0; // Yaw angle (0 = Straight forward, +90 = turn right, -90 = turn left)
+  double _pitch =
+      -35.0; // Pitch angle (starting tilted down so road renders instantly)
 
   // Simulation parameters
   bool _isSimulatingWalk = false;
@@ -74,7 +77,8 @@ class _ArViewportState extends State<ArViewport> with SingleTickerProviderStateM
     });
 
     if (_isSimulatingWalk) {
-      final bool completed = _simulationWaypointIndex >= widget.roadWaypoints.length - 1;
+      final bool completed =
+          _simulationWaypointIndex >= widget.roadWaypoints.length - 1;
       if (completed) {
         setState(() {
           _simulationWaypointIndex = 0;
@@ -84,14 +88,20 @@ class _ArViewportState extends State<ArViewport> with SingleTickerProviderStateM
           }
         });
         if (widget.roadWaypoints.isNotEmpty) {
-          widget.onLocationChanged(widget.roadWaypoints[0]);
+          // Reset to start of corridor, but keep camera at eye-level Z=0
+          final startWaypoint = widget.roadWaypoints[0];
+          widget.onLocationChanged(
+            Vector3(startWaypoint.x, startWaypoint.y, 0.0),
+          );
         }
       }
 
       // Automatically snap camera view to face down the corridor path
       _snapCameraToPath();
 
-      _simulationTimer = Timer.periodic(const Duration(milliseconds: 50), (timer) {
+      _simulationTimer = Timer.periodic(const Duration(milliseconds: 50), (
+        timer,
+      ) {
         _updateSimulation();
       });
     } else {
@@ -103,7 +113,10 @@ class _ArViewportState extends State<ArViewport> with SingleTickerProviderStateM
     if (widget.roadWaypoints.isEmpty) return;
 
     // Determine target heading based on current position and next waypoint
-    final int nextIdx = (_simulationWaypointIndex + 1).clamp(0, widget.roadWaypoints.length - 1);
+    final int nextIdx = (_simulationWaypointIndex + 1).clamp(
+      0,
+      widget.roadWaypoints.length - 1,
+    );
     final currentPos = widget.userPosition;
     final nextPos = widget.roadWaypoints[nextIdx];
 
@@ -125,7 +138,8 @@ class _ArViewportState extends State<ArViewport> with SingleTickerProviderStateM
 
     setState(() {
       _heading = (targetHeading + 360) % 360;
-      _pitch = -35.0; // Tilts phone downward so the road renders instantly (gating threshold is 20)
+      _pitch =
+          -35.0; // Tilts phone downward so the road renders instantly (gating threshold is 20)
     });
   }
 
@@ -158,13 +172,13 @@ class _ArViewportState extends State<ArViewport> with SingleTickerProviderStateM
     if (_simulationProgress >= 1.0) {
       _simulationWaypointIndex++;
       _simulationProgress = 0.0;
-      widget.onLocationChanged(p2);
+      // Keep camera at eye-level (Z=0) while walking along corridor (Z=-1.6)
+      widget.onLocationChanged(Vector3(p2.x, p2.y, 0.0));
     } else {
       final interpX = p1.x + (p2.x - p1.x) * _simulationProgress;
       final interpY = p1.y + (p2.y - p1.y) * _simulationProgress;
-      final interpZ = p1.z + (p2.z - p1.z) * _simulationProgress;
-      final newPos = Vector3(interpX, interpY, interpZ);
-      widget.onLocationChanged(newPos);
+      // Keep camera at eye-level (Z=0) while walking along corridor (Z=-1.6)
+      widget.onLocationChanged(Vector3(interpX, interpY, 0.0));
 
       // Auto-orient camera heading towards next waypoint
       final dy = p2.y - interpY;
@@ -173,7 +187,8 @@ class _ArViewportState extends State<ArViewport> with SingleTickerProviderStateM
 
       // Smooth camera yaw interpolation
       final diff = targetHeading - _heading;
-      final shortestDiff = atan2(sin(diff * pi / 180.0), cos(diff * pi / 180.0)) * 180.0 / pi;
+      final shortestDiff =
+          atan2(sin(diff * pi / 180.0), cos(diff * pi / 180.0)) * 180.0 / pi;
       _heading = (_heading + shortestDiff * 0.15 + 360) % 360;
     }
 
@@ -210,7 +225,9 @@ class _ArViewportState extends State<ArViewport> with SingleTickerProviderStateM
           z: node.localZ ?? 0.0,
           color: node.type == 'coin'
               ? AppColors.gold
-              : (node.type == 'beacon' ? Colors.cyanAccent : Colors.cyan.shade300),
+              : (node.type == 'beacon'
+                    ? Colors.cyanAccent
+                    : Colors.cyan.shade300),
           spawnTime: DateTime.now(),
         ),
       );
@@ -219,10 +236,12 @@ class _ArViewportState extends State<ArViewport> with SingleTickerProviderStateM
     Timer(const Duration(milliseconds: 1200), () {
       if (mounted) {
         setState(() {
-          _particleBursts.removeWhere((b) =>
-              b.x == (node.localX ?? 0.0) &&
-              b.y == (node.localY ?? 0.0) &&
-              b.z == (node.localZ ?? 0.0));
+          _particleBursts.removeWhere(
+            (b) =>
+                b.x == (node.localX ?? 0.0) &&
+                b.y == (node.localY ?? 0.0) &&
+                b.z == (node.localZ ?? 0.0),
+          );
         });
       }
     });
@@ -238,10 +257,6 @@ class _ArViewportState extends State<ArViewport> with SingleTickerProviderStateM
         if (mounted) _checkQuestNodeCollection();
       });
     }
-
-    // Calculate camera pitch downward angle to display in warning HUD
-    final pitchDownward = -_pitch;
-    final bool isLookingDown = pitchDownward >= 20.0;
 
     return GestureDetector(
       onPanUpdate: (details) {
@@ -274,6 +289,7 @@ class _ArViewportState extends State<ArViewport> with SingleTickerProviderStateM
                     particleBursts: _particleBursts,
                     animationValue: _animationController.value,
                     isFloorDetected: widget.isFloorDetected,
+                    isSimulatingWalk: _isSimulatingWalk,
                   ),
                   // child forces the CustomPaint to fill the parent on web
                   child: const SizedBox.expand(),
@@ -282,118 +298,86 @@ class _ArViewportState extends State<ArViewport> with SingleTickerProviderStateM
             ),
           ),
 
-          // Scanning Floor Animation overlay
+          // Layer 4: non-blocking calibration HUD. It is intentionally not
+          // fullscreen, so Layer 2's golden corridor remains visible.
           if (!widget.isFloorDetected)
-            Positioned.fill(
-              child: Container(
-                color: Colors.black.withOpacity(0.35),
-                child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
+            Positioned(
+              top: 96,
+              left: 18,
+              right: 18,
+              child: IgnorePointer(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 14,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.background.withOpacity(0.58),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(
+                      color: Colors.cyanAccent.withOpacity(0.45),
+                      width: 1.2,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.cyanAccent.withOpacity(0.12),
+                        blurRadius: 24,
+                      ),
+                    ],
+                  ),
+                  child: Row(
                     children: [
-                      // Scanner Radar
                       SizedBox(
-                        width: 140,
-                        height: 140,
+                        width: 44,
+                        height: 44,
                         child: Stack(
                           alignment: Alignment.center,
                           children: [
                             CircularProgressIndicator(
                               value: widget.scanProgress,
                               color: Colors.cyanAccent,
-                              strokeWidth: 3.5,
-                            ),
-                            Container(
-                              width: 110,
-                              height: 110,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: Colors.cyanAccent.withOpacity(0.08),
-                                border: Border.all(color: Colors.cyanAccent.withOpacity(0.3), width: 1.5),
+                              backgroundColor: Colors.cyanAccent.withOpacity(
+                                0.08,
                               ),
-                              child: const Icon(
-                                Icons.center_focus_strong_outlined,
+                              strokeWidth: 3,
+                            ),
+                            const Icon(
+                              Icons.center_focus_strong_outlined,
+                              color: Colors.cyanAccent,
+                              size: 20,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'CALIBRATING HERITAGE CORRIDOR',
+                              style: GoogleFonts.inter(
                                 color: Colors.cyanAccent,
-                                size: 38,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 1.4,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Golden route remains locked while floor mapping completes',
+                              style: GoogleFonts.inter(
+                                color: AppColors.text.withOpacity(0.78),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w500,
                               ),
                             ),
                           ],
                         ),
                       ),
-                      const SizedBox(height: 24),
-                      Text(
-                        'SCANNING CORRIDOR FLOOR...',
-                        style: GoogleFonts.inter(
-                          color: Colors.cyanAccent,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 1.5,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Point camera downward and move side to side',
-                        style: GoogleFonts.inter(
-                          color: AppColors.secondary,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
                     ],
                   ),
-                ),
-              ),
-            ),
-
-          // Look Down Warning Overlay
-          if (widget.isFloorDetected && !isLookingDown)
-            Positioned(
-              top: 130,
-              left: 32,
-              right: 32,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                decoration: BoxDecoration(
-                  color: Colors.red.shade900.withOpacity(0.85),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: Colors.redAccent, width: 1.5),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.red.withOpacity(0.25),
-                      blurRadius: 16,
-                    ),
-                  ],
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 20),
-                        SizedBox(width: 8),
-                        Text(
-                          'ROADWAY HIDDEN',
-                          style: TextStyle(
-                            color: Colors.redAccent,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 1.0,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Tilt phone downward (look at the floor) to reveal the path',
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.inter(
-                        color: AppColors.text,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
                 ),
               ),
             ),
@@ -412,7 +396,10 @@ class _ArViewportState extends State<ArViewport> with SingleTickerProviderStateM
                       decoration: BoxDecoration(
                         color: AppColors.background.withOpacity(0.85),
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: AppColors.navBorder, width: 1.5),
+                        border: Border.all(
+                          color: AppColors.navBorder,
+                          width: 1.5,
+                        ),
                       ),
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Row(
@@ -421,8 +408,12 @@ class _ArViewportState extends State<ArViewport> with SingleTickerProviderStateM
                           Row(
                             children: [
                               Icon(
-                                _isSimulatingWalk ? Icons.directions_walk_rounded : Icons.pause_circle_outline_rounded,
-                                color: _isSimulatingWalk ? AppColors.gold : AppColors.secondary,
+                                _isSimulatingWalk
+                                    ? Icons.directions_walk_rounded
+                                    : Icons.pause_circle_outline_rounded,
+                                color: _isSimulatingWalk
+                                    ? AppColors.gold
+                                    : AppColors.secondary,
                                 size: 20,
                               ),
                               const SizedBox(width: 8),
@@ -442,7 +433,11 @@ class _ArViewportState extends State<ArViewport> with SingleTickerProviderStateM
                             Row(
                               children: [
                                 IconButton(
-                                  icon: const Icon(Icons.remove, color: AppColors.secondary, size: 18),
+                                  icon: const Icon(
+                                    Icons.remove,
+                                    color: AppColors.secondary,
+                                    size: 18,
+                                  ),
                                   padding: EdgeInsets.zero,
                                   constraints: const BoxConstraints(),
                                   onPressed: () {
@@ -453,7 +448,11 @@ class _ArViewportState extends State<ArViewport> with SingleTickerProviderStateM
                                 ),
                                 const SizedBox(width: 8),
                                 IconButton(
-                                  icon: const Icon(Icons.add, color: AppColors.secondary, size: 18),
+                                  icon: const Icon(
+                                    Icons.add,
+                                    color: AppColors.secondary,
+                                    size: 18,
+                                  ),
                                   padding: EdgeInsets.zero,
                                   constraints: const BoxConstraints(),
                                   onPressed: () {
@@ -483,14 +482,22 @@ class _ArViewportState extends State<ArViewport> with SingleTickerProviderStateM
                         shape: BoxShape.circle,
                         boxShadow: [
                           BoxShadow(
-                            color: (_isSimulatingWalk ? Colors.red : AppColors.gold).withOpacity(0.35),
+                            color:
+                                (_isSimulatingWalk
+                                        ? Colors.red
+                                        : AppColors.gold)
+                                    .withOpacity(0.35),
                             blurRadius: 12,
                           ),
                         ],
                       ),
                       child: Icon(
-                        _isSimulatingWalk ? Icons.stop_rounded : Icons.play_arrow_rounded,
-                        color: _isSimulatingWalk ? Colors.white : AppColors.background,
+                        _isSimulatingWalk
+                            ? Icons.stop_rounded
+                            : Icons.play_arrow_rounded,
+                        color: _isSimulatingWalk
+                            ? Colors.white
+                            : AppColors.background,
                         size: 26,
                       ),
                     ),
@@ -514,9 +521,17 @@ class _ArViewportState extends State<ArViewport> with SingleTickerProviderStateM
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  _buildTelemetryRow(Icons.explore_outlined, 'Yaw (Yaw)', '${_heading.toStringAsFixed(1)}°'),
+                  _buildTelemetryRow(
+                    Icons.explore_outlined,
+                    'Yaw (Yaw)',
+                    '${_heading.toStringAsFixed(1)}°',
+                  ),
                   const SizedBox(height: 6),
-                  _buildTelemetryRow(Icons.height_outlined, 'Pitch (Pitch)', '${_pitch.toStringAsFixed(1)}°'),
+                  _buildTelemetryRow(
+                    Icons.height_outlined,
+                    'Pitch (Pitch)',
+                    '${_pitch.toStringAsFixed(1)}°',
+                  ),
                   const SizedBox(height: 6),
                   _buildTelemetryRow(
                     Icons.grid_3x3_rounded,
@@ -568,6 +583,7 @@ class ArPainter extends CustomPainter {
   final List<_ParticleBurst> particleBursts;
   final double animationValue;
   final bool isFloorDetected;
+  final bool isSimulatingWalk;
 
   ArPainter({
     required this.userPosition,
@@ -578,11 +594,13 @@ class ArPainter extends CustomPainter {
     required this.particleBursts,
     required this.animationValue,
     required this.isFloorDetected,
+    required this.isSimulatingWalk,
   });
 
   static const double _fov = 60.0;
   static const double _roadWidth = 2.4; // width of corridor path mesh
-  static const double _maxRenderDist = 25.0; // Render range in indoor coordinate space (25 meters)
+  static const double _maxRenderDist =
+      25.0; // Render range in indoor coordinate space (25 meters)
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -592,18 +610,12 @@ class ArPainter extends CustomPainter {
     // 0. Draw dark AR background gradient so road is always visible
     _drawARBackground(canvas, size);
 
-    if (!isFloorDetected) return;
-
     // 1. Draw the floor plane scanning grid
     _drawFloorPlaneGrid(canvas, size, f);
 
-    // Road is always visible when floor is detected (no pitch gating)
-    // Soft opacity still based on pitch for a natural feel,
-    // but minimum 0.7 so road is always clearly visible
-    final double pitchDownward = -pitch;
-    final double roadOpacity = pitchDownward > 20.0
-        ? ((pitchDownward - 20.0) / 15.0).clamp(0.7, 1.0)
-        : 0.7; // Always at least 70% visible
+    // Layer 2 invariant: the navigation corridor is always painted at full
+    // visibility. Simulation only increases bloom; it never fades the path.
+    const double roadOpacity = 1.0;
 
     // 2. Draw the Golden Road Mesh
     _drawCorridorRoad(canvas, size, f, roadOpacity);
@@ -628,9 +640,9 @@ class ArPainter extends CustomPainter {
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
         colors: [
-          const Color(0xFF060E1F),
-          const Color(0xFF0A1628),
-          const Color(0xFF0D1B3E).withOpacity(0.85),
+          AppColors.deepNavy,
+          AppColors.background,
+          AppColors.emerald.withOpacity(0.85),
         ],
       ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
     canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), bgPaint);
@@ -641,7 +653,11 @@ class ArPainter extends CustomPainter {
       ..color = Colors.cyanAccent.withOpacity(0.04)
       ..strokeWidth = 1.0
       ..style = PaintingStyle.stroke;
-    canvas.drawLine(Offset(0, horizonY), Offset(size.width, horizonY), horizonPaint);
+    canvas.drawLine(
+      Offset(0, horizonY),
+      Offset(size.width, horizonY),
+      horizonPaint,
+    );
   }
 
   void _drawFloorPlaneGrid(Canvas canvas, Size size, double f) {
@@ -655,24 +671,57 @@ class ArPainter extends CustomPainter {
     // Horizontal grid lines every 2m
     final double startY = (userFloorY / 2.0).floor() * 2.0;
     for (double gy = startY; gy <= userFloorY + _maxRenderDist; gy += 2.0) {
-      final pA = _enuToCamera(Vector3(-2.5, gy, -1.6), userPosition, heading, pitch);
-      final pB = _enuToCamera(Vector3(2.5, gy, -1.6), userPosition, heading, pitch);
+      final pA = _enuToCamera(
+        Vector3(-2.5, gy, -1.6),
+        userPosition,
+        heading,
+        pitch,
+      );
+      final pB = _enuToCamera(
+        Vector3(2.5, gy, -1.6),
+        userPosition,
+        heading,
+        pitch,
+      );
       if (pA.dy > 0.1 && pB.dy > 0.1) {
-        canvas.drawLine(_project(pA, f, size), _project(pB, f, size), gridPaint);
+        canvas.drawLine(
+          _project(pA, f, size),
+          _project(pB, f, size),
+          gridPaint,
+        );
       }
     }
 
     // Vertical grid lines every 1.25m
     for (double gx = -2.5; gx <= 2.5; gx += 1.25) {
-      final pA = _enuToCamera(Vector3(gx, userFloorY, -1.6), userPosition, heading, pitch);
-      final pB = _enuToCamera(Vector3(gx, userFloorY + _maxRenderDist, -1.6), userPosition, heading, pitch);
+      final pA = _enuToCamera(
+        Vector3(gx, userFloorY, -1.6),
+        userPosition,
+        heading,
+        pitch,
+      );
+      final pB = _enuToCamera(
+        Vector3(gx, userFloorY + _maxRenderDist, -1.6),
+        userPosition,
+        heading,
+        pitch,
+      );
       if (pA.dy > 0.1 && pB.dy > 0.1) {
-        canvas.drawLine(_project(pA, f, size), _project(pB, f, size), gridPaint);
+        canvas.drawLine(
+          _project(pA, f, size),
+          _project(pB, f, size),
+          gridPaint,
+        );
       }
     }
   }
 
-  void _drawCorridorRoad(Canvas canvas, Size size, double f, double roadOpacity) {
+  void _drawCorridorRoad(
+    Canvas canvas,
+    Size size,
+    double f,
+    double roadOpacity,
+  ) {
     if (roadWaypoints.length < 2) return;
 
     final List<Offset> leftProjPoints = [];
@@ -689,26 +738,40 @@ class ArPainter extends CustomPainter {
         final dx = next.x - pt.x;
         final dy = next.y - pt.y;
         final len = sqrt(dx * dx + dy * dy);
-        if (len > 0.1) { perpX = -dy / len; perpY = dx / len; }
+        if (len > 0.1) {
+          perpX = -dy / len;
+          perpY = dx / len;
+        }
       } else if (i > 0) {
         final prev = roadWaypoints[i - 1];
         final dx = pt.x - prev.x;
         final dy = pt.y - prev.y;
         final len = sqrt(dx * dx + dy * dy);
-        if (len > 0.1) { perpX = -dy / len; perpY = dx / len; }
+        if (len > 0.1) {
+          perpX = -dy / len;
+          perpY = dx / len;
+        }
       }
 
-      final leftPt  = Vector3(pt.x + perpX * (_roadWidth / 2.0), pt.y + perpY * (_roadWidth / 2.0), -1.6);
-      final rightPt = Vector3(pt.x - perpX * (_roadWidth / 2.0), pt.y - perpY * (_roadWidth / 2.0), -1.6);
+      final leftPt = Vector3(
+        pt.x + perpX * (_roadWidth / 2.0),
+        pt.y + perpY * (_roadWidth / 2.0),
+        -1.6,
+      );
+      final rightPt = Vector3(
+        pt.x - perpX * (_roadWidth / 2.0),
+        pt.y - perpY * (_roadWidth / 2.0),
+        -1.6,
+      );
 
-      final leftCam  = _enuToCamera(leftPt,  userPosition, heading, pitch);
+      final leftCam = _enuToCamera(leftPt, userPosition, heading, pitch);
       final rightCam = _enuToCamera(rightPt, userPosition, heading, pitch);
 
       final avgDepth = (leftCam.dy + rightCam.dy) / 2.0;
       // Skip behind-camera and too-far points
       if (avgDepth <= 0.1 || avgDepth > _maxRenderDist) continue;
 
-      leftProjPoints.add(_project(leftCam,  f, size));
+      leftProjPoints.add(_project(leftCam, f, size));
       rightProjPoints.add(_project(rightCam, f, size));
       segmentDepths.add(avgDepth);
     }
@@ -724,8 +787,9 @@ class ArPainter extends CustomPainter {
       final p3 = rightProjPoints[i + 1];
       final p4 = leftProjPoints[i + 1];
 
-      final fade = (1.0 - (depth / _maxRenderDist)).clamp(0.0, 1.0);
-      final finalOpacity = roadOpacity * fade;
+      final fade = (1.0 - (depth / _maxRenderDist)).clamp(0.42, 1.0);
+      final bloomBoost = isSimulatingWalk ? 1.22 : 1.0;
+      final finalOpacity = (roadOpacity * fade).clamp(0.55, 1.0);
 
       // Road surface fill — significantly more visible now
       final path = Path()
@@ -736,12 +800,22 @@ class ArPainter extends CustomPainter {
         ..close();
 
       final fillPaint = Paint()
-        ..color = AppColors.gold.withOpacity(finalOpacity * 0.55)
+        ..color = AppColors.gold.withOpacity(
+          (finalOpacity * 0.62).clamp(0.0, 1.0),
+        )
         ..style = PaintingStyle.fill;
       canvas.drawPath(path, fillPaint);
 
+      final corePaint = Paint()
+        ..color = Colors.white.withOpacity(
+          (finalOpacity * 0.13).clamp(0.0, 1.0),
+        )
+        ..style = PaintingStyle.fill
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10.0);
+      canvas.drawPath(path, corePaint);
+
       // Bright glowing border edges
-      final strokeW = (6.0 / (depth * 0.2 + 1.0)).clamp(2.0, 5.0);
+      final strokeW = (7.5 / (depth * 0.18 + 1.0)).clamp(2.4, 6.0);
       final borderPaint = Paint()
         ..color = AppColors.gold.withOpacity(finalOpacity)
         ..strokeWidth = strokeW
@@ -752,10 +826,15 @@ class ArPainter extends CustomPainter {
 
       // Outer glow effect on edges
       final glowPaint = Paint()
-        ..color = AppColors.gold.withOpacity(finalOpacity * 0.3)
-        ..strokeWidth = strokeW * 3
+        ..color = AppColors.gold.withOpacity(
+          (finalOpacity * 0.42 * bloomBoost).clamp(0.0, 1.0),
+        )
+        ..strokeWidth = strokeW * (isSimulatingWalk ? 4.4 : 3.4)
         ..strokeCap = StrokeCap.round
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6.0)
+        ..maskFilter = MaskFilter.blur(
+          BlurStyle.normal,
+          isSimulatingWalk ? 10.0 : 7.0,
+        )
         ..style = PaintingStyle.stroke;
       canvas.drawLine(p1, p4, glowPaint);
       canvas.drawLine(p2, p3, glowPaint);
@@ -764,22 +843,95 @@ class ArPainter extends CustomPainter {
       final dashLength = 30.0;
       final dashOffset = animationValue * dashLength * 2.0;
       final centerStart = Offset((p1.dx + p2.dx) / 2, (p1.dy + p2.dy) / 2);
-      final centerEnd   = Offset((p3.dx + p4.dx) / 2, (p3.dy + p4.dy) / 2);
+      final centerEnd = Offset((p3.dx + p4.dx) / 2, (p3.dy + p4.dy) / 2);
       final centerPaint = Paint()
-        ..color = Colors.white.withOpacity(finalOpacity * 0.9)
-        ..strokeWidth = (2.5 / (depth * 0.2 + 1.0)).clamp(1.0, 2.5)
+        ..color = Colors.white.withOpacity(
+          (finalOpacity * 0.95).clamp(0.0, 1.0),
+        )
+        ..strokeWidth = (3.0 / (depth * 0.18 + 1.0)).clamp(1.2, 3.0)
         ..style = PaintingStyle.stroke;
-      _drawDashedLine(canvas, centerStart, centerEnd, centerPaint, dashLength, dashOffset);
+      _drawDashedLine(
+        canvas,
+        centerStart,
+        centerEnd,
+        centerPaint,
+        dashLength,
+        dashOffset,
+      );
+
+      _drawDirectionChevron(
+        canvas,
+        centerStart,
+        centerEnd,
+        depth,
+        finalOpacity,
+      );
     }
   }
 
-  void _drawWallBoundaries(Canvas canvas, Size size, double f, double roadOpacity) {
+  void _drawDirectionChevron(
+    Canvas canvas,
+    Offset start,
+    Offset end,
+    double depth,
+    double opacity,
+  ) {
+    final dx = end.dx - start.dx;
+    final dy = end.dy - start.dy;
+    final len = sqrt(dx * dx + dy * dy);
+    if (len < 12) return;
+
+    final ux = dx / len;
+    final uy = dy / len;
+    final px = -uy;
+    final py = ux;
+    final center = Offset(
+      start.dx + dx * ((animationValue * 0.55 + 0.28) % 1.0),
+      start.dy + dy * ((animationValue * 0.55 + 0.28) % 1.0),
+    );
+    final chevronLength = (24.0 / (depth * 0.12 + 1.0)).clamp(10.0, 24.0);
+    final chevronWidth = chevronLength * 0.78;
+
+    final path = Path()
+      ..moveTo(center.dx + ux * chevronLength, center.dy + uy * chevronLength)
+      ..lineTo(
+        center.dx - ux * chevronLength * 0.45 + px * chevronWidth,
+        center.dy - uy * chevronLength * 0.45 + py * chevronWidth,
+      )
+      ..moveTo(center.dx + ux * chevronLength, center.dy + uy * chevronLength)
+      ..lineTo(
+        center.dx - ux * chevronLength * 0.45 - px * chevronWidth,
+        center.dy - uy * chevronLength * 0.45 - py * chevronWidth,
+      );
+
+    final glow = Paint()
+      ..color = Colors.white.withOpacity((opacity * 0.36).clamp(0.0, 1.0))
+      ..strokeWidth = 5
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
+    final stroke = Paint()
+      ..color = Colors.white.withOpacity((opacity * 0.88).clamp(0.0, 1.0))
+      ..strokeWidth = 2.2
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+
+    canvas.drawPath(path, glow);
+    canvas.drawPath(path, stroke);
+  }
+
+  void _drawWallBoundaries(
+    Canvas canvas,
+    Size size,
+    double f,
+    double roadOpacity,
+  ) {
     // Left boundary (X = -1.5) and Right boundary (X = 1.5) corridor boundaries
     // We draw columns or panels along the route to represent detected corridor walls
     final wallPaint = Paint()
       ..color = Colors.cyan.withOpacity(roadOpacity * 0.05)
       ..style = PaintingStyle.fill;
-    
+
     final wirePaint = Paint()
       ..color = Colors.cyan.withOpacity(roadOpacity * 0.18)
       ..strokeWidth = 1.0;
@@ -789,17 +941,57 @@ class ArPainter extends CustomPainter {
       final pB = roadWaypoints[i + 1];
 
       // Draw left wall panels
-      _drawWallPanel(canvas, size, f, pA.x + RouteManager.leftWallX, pA.y, pB.x + RouteManager.leftWallX, pB.y, wallPaint, wirePaint);
+      _drawWallPanel(
+        canvas,
+        size,
+        f,
+        pA.x + RouteManager.leftWallX,
+        pA.y,
+        pB.x + RouteManager.leftWallX,
+        pB.y,
+        wallPaint,
+        wirePaint,
+      );
       // Draw right wall panels
-      _drawWallPanel(canvas, size, f, pA.x + RouteManager.rightWallX, pA.y, pB.x + RouteManager.rightWallX, pB.y, wallPaint, wirePaint);
+      _drawWallPanel(
+        canvas,
+        size,
+        f,
+        pA.x + RouteManager.rightWallX,
+        pA.y,
+        pB.x + RouteManager.rightWallX,
+        pB.y,
+        wallPaint,
+        wirePaint,
+      );
     }
   }
 
-  void _drawWallPanel(Canvas canvas, Size size, double f, double x1, double y1, double x2, double y2, Paint fill, Paint stroke) {
+  void _drawWallPanel(
+    Canvas canvas,
+    Size size,
+    double f,
+    double x1,
+    double y1,
+    double x2,
+    double y2,
+    Paint fill,
+    Paint stroke,
+  ) {
     // A wall is from Z = -1.6m (floor) to Z = 0.6m (ceiling-height of phone)
-    final b1 = _enuToCamera(Vector3(x1, y1, -1.6), userPosition, heading, pitch);
+    final b1 = _enuToCamera(
+      Vector3(x1, y1, -1.6),
+      userPosition,
+      heading,
+      pitch,
+    );
     final t1 = _enuToCamera(Vector3(x1, y1, 0.6), userPosition, heading, pitch);
-    final b2 = _enuToCamera(Vector3(x2, y2, -1.6), userPosition, heading, pitch);
+    final b2 = _enuToCamera(
+      Vector3(x2, y2, -1.6),
+      userPosition,
+      heading,
+      pitch,
+    );
     final t2 = _enuToCamera(Vector3(x2, y2, 0.6), userPosition, heading, pitch);
 
     if (b1.dy <= 0.1 || b2.dy <= 0.1 || t1.dy <= 0.1 || t2.dy <= 0.1) return;
@@ -831,7 +1023,12 @@ class ArPainter extends CustomPainter {
       final double ly = node.localY ?? 0.0;
       final double lz = node.localZ ?? -1.6;
 
-      final depth = _enuToCamera(Vector3(lx, ly, lz), userPosition, heading, pitch).dy;
+      final depth = _enuToCamera(
+        Vector3(lx, ly, lz),
+        userPosition,
+        heading,
+        pitch,
+      ).dy;
       if (depth <= 0.1 || depth > _maxRenderDist) continue;
 
       if (node.type == 'save_point') {
@@ -842,8 +1039,21 @@ class ArPainter extends CustomPainter {
     }
   }
 
-  void _drawObelisk(Canvas canvas, Size size, double f, double lx, double ly, double lz, double depth) {
-    final baseCenter = _enuToCamera(Vector3(lx, ly, lz), userPosition, heading, pitch);
+  void _drawObelisk(
+    Canvas canvas,
+    Size size,
+    double f,
+    double lx,
+    double ly,
+    double lz,
+    double depth,
+  ) {
+    final baseCenter = _enuToCamera(
+      Vector3(lx, ly, lz),
+      userPosition,
+      heading,
+      pitch,
+    );
     final baseProj = _project(baseCenter, f, size);
 
     final double sizeScale = (1.5 / depth).clamp(0.05, 3.0);
@@ -865,7 +1075,11 @@ class ArPainter extends CustomPainter {
         ..strokeWidth = 2.0;
 
       canvas.drawOval(
-        Rect.fromCenter(center: baseProj, width: radius * 2.0, height: flatHeight * 2.0),
+        Rect.fromCenter(
+          center: baseProj,
+          width: radius * 2.0,
+          height: flatHeight * 2.0,
+        ),
         ringPaint,
       );
     }
@@ -880,11 +1094,17 @@ class ArPainter extends CustomPainter {
     ];
 
     final topEnu = Vector3(lx, ly, lz + 2.0); // 2.0 meters tall
-    final topProj = _project(_enuToCamera(topEnu, userPosition, heading, pitch), f, size);
+    final topProj = _project(
+      _enuToCamera(topEnu, userPosition, heading, pitch),
+      f,
+      size,
+    );
 
     final List<Offset> baseProjPoints = [];
     for (final bp in basePoints) {
-      baseProjPoints.add(_project(_enuToCamera(bp, userPosition, heading, pitch), f, size));
+      baseProjPoints.add(
+        _project(_enuToCamera(bp, userPosition, heading, pitch), f, size),
+      );
     }
 
     final visibility = (1.0 - (depth / _maxRenderDist)).clamp(0.0, 1.0);
@@ -904,7 +1124,8 @@ class ArPainter extends CustomPainter {
         ..lineTo(pB.dx, pB.dy)
         ..close();
 
-      final double shading = 0.2 + 0.15 * sin(animationValue * 2 * pi + i * pi / 2);
+      final double shading =
+          0.2 + 0.15 * sin(animationValue * 2 * pi + i * pi / 2);
       facePaint.color = Color.fromARGB(
         (visibility * 255).round(),
         (0x13 * shading + 0x05).round().clamp(0, 255),
@@ -943,10 +1164,28 @@ class ArPainter extends CustomPainter {
     }
   }
 
-  void _drawDestinationBeacon(Canvas canvas, Size size, double f, double lx, double ly, double lz, double depth) {
+  void _drawDestinationBeacon(
+    Canvas canvas,
+    Size size,
+    double f,
+    double lx,
+    double ly,
+    double lz,
+    double depth,
+  ) {
     // A Destination Beacon is a massive glowing beacon of light extending from the floor to the sky!
-    final bCam = _enuToCamera(Vector3(lx, ly, lz), userPosition, heading, pitch);
-    final tCam = _enuToCamera(Vector3(lx, ly, lz + 8.0), userPosition, heading, pitch); // 8m tall beam
+    final bCam = _enuToCamera(
+      Vector3(lx, ly, lz),
+      userPosition,
+      heading,
+      pitch,
+    );
+    final tCam = _enuToCamera(
+      Vector3(lx, ly, lz + 8.0),
+      userPosition,
+      heading,
+      pitch,
+    ); // 8m tall beam
 
     if (bCam.dy <= 0.1 || tCam.dy <= 0.1) return;
 
@@ -991,7 +1230,11 @@ class ArPainter extends CustomPainter {
 
       final double width = orbitRadius * cos(animationValue * 4.0 * pi + j);
       canvas.drawOval(
-        Rect.fromCenter(center: centerPos, width: width, height: orbitRadius * 0.3),
+        Rect.fromCenter(
+          center: centerPos,
+          width: width,
+          height: orbitRadius * 0.3,
+        ),
         orbitPaint,
       );
     }
@@ -1006,8 +1249,13 @@ class ArPainter extends CustomPainter {
       final double lz = node.localZ ?? -0.4; // float height
 
       final double bob = sin(animationValue * 4.0 * pi + lx) * 0.12;
-      final cam = _enuToCamera(Vector3(lx, ly, lz + bob), userPosition, heading, pitch);
-      
+      final cam = _enuToCamera(
+        Vector3(lx, ly, lz + bob),
+        userPosition,
+        heading,
+        pitch,
+      );
+
       final depth = cam.dy;
       if (depth <= 0.1 || depth > _maxRenderDist) continue;
 
@@ -1028,7 +1276,11 @@ class ArPainter extends CustomPainter {
       canvas.drawCircle(proj, coinR * 1.3, glow);
 
       // Coin cylinder body
-      final rect = Rect.fromCenter(center: proj, width: spinWidth, height: coinR * 2.0);
+      final rect = Rect.fromCenter(
+        center: proj,
+        width: spinWidth,
+        height: coinR * 2.0,
+      );
       final fill = Paint()
         ..shader = RadialGradient(
           colors: [AppColors.gold, AppColors.goldDark],
@@ -1040,7 +1292,11 @@ class ArPainter extends CustomPainter {
 
       // Coin Inner Ring & details
       if (!isFacingEdge) {
-        final innerRect = Rect.fromCenter(center: proj, width: spinWidth * 0.75, height: coinR * 1.5);
+        final innerRect = Rect.fromCenter(
+          center: proj,
+          width: spinWidth * 0.75,
+          height: coinR * 1.5,
+        );
         final innerPaint = Paint()
           ..color = AppColors.goldDark.withOpacity(opacity * 0.75)
           ..style = PaintingStyle.stroke
@@ -1050,14 +1306,38 @@ class ArPainter extends CustomPainter {
         // Chola Gold symbol 'T'
         final textScale = coinR * 0.4;
         final symbolPath = Path()
-          ..moveTo(proj.dx - textScale * cos(spinAngle).abs(), proj.dy - textScale)
-          ..lineTo(proj.dx + textScale * cos(spinAngle).abs(), proj.dy - textScale)
-          ..lineTo(proj.dx + textScale * cos(spinAngle).abs(), proj.dy - textScale * 0.6)
-          ..lineTo(proj.dx + textScale * 0.25 * cos(spinAngle).abs(), proj.dy - textScale * 0.6)
-          ..lineTo(proj.dx + textScale * 0.25 * cos(spinAngle).abs(), proj.dy + textScale * 0.9)
-          ..lineTo(proj.dx - textScale * 0.25 * cos(spinAngle).abs(), proj.dy + textScale * 0.9)
-          ..lineTo(proj.dx - textScale * 0.25 * cos(spinAngle).abs(), proj.dy - textScale * 0.6)
-          ..lineTo(proj.dx - textScale * cos(spinAngle).abs(), proj.dy - textScale * 0.6)
+          ..moveTo(
+            proj.dx - textScale * cos(spinAngle).abs(),
+            proj.dy - textScale,
+          )
+          ..lineTo(
+            proj.dx + textScale * cos(spinAngle).abs(),
+            proj.dy - textScale,
+          )
+          ..lineTo(
+            proj.dx + textScale * cos(spinAngle).abs(),
+            proj.dy - textScale * 0.6,
+          )
+          ..lineTo(
+            proj.dx + textScale * 0.25 * cos(spinAngle).abs(),
+            proj.dy - textScale * 0.6,
+          )
+          ..lineTo(
+            proj.dx + textScale * 0.25 * cos(spinAngle).abs(),
+            proj.dy + textScale * 0.9,
+          )
+          ..lineTo(
+            proj.dx - textScale * 0.25 * cos(spinAngle).abs(),
+            proj.dy + textScale * 0.9,
+          )
+          ..lineTo(
+            proj.dx - textScale * 0.25 * cos(spinAngle).abs(),
+            proj.dy - textScale * 0.6,
+          )
+          ..lineTo(
+            proj.dx - textScale * cos(spinAngle).abs(),
+            proj.dy - textScale * 0.6,
+          )
           ..close();
 
         final symPaint = Paint()
@@ -1070,7 +1350,12 @@ class ArPainter extends CustomPainter {
 
   void _drawParticleBursts(Canvas canvas, Size size, double f) {
     for (final burst in particleBursts) {
-      final cam = _enuToCamera(Vector3(burst.x, burst.y, burst.z), userPosition, heading, pitch);
+      final cam = _enuToCamera(
+        Vector3(burst.x, burst.y, burst.z),
+        userPosition,
+        heading,
+        pitch,
+      );
       if (cam.dy <= 0.1 || cam.dy > _maxRenderDist) continue;
 
       final proj = _project(cam, f, size);
@@ -1090,7 +1375,12 @@ class ArPainter extends CustomPainter {
 
   // Math translation matrix (VIO relative)
 
-  _CameraCoord _enuToCamera(Vector3 pt, Vector3 ref, double yawDeg, double pitchDeg) {
+  _CameraCoord _enuToCamera(
+    Vector3 pt,
+    Vector3 ref,
+    double yawDeg,
+    double pitchDeg,
+  ) {
     // Relative coordinates
     final double dx = pt.x - ref.x;
     final double dy = pt.y - ref.y;
@@ -1121,11 +1411,18 @@ class ArPainter extends CustomPainter {
     return Offset(screenX, screenY);
   }
 
-  void _drawDashedLine(Canvas canvas, Offset p1, Offset p2, Paint paint, double dashWidth, double offset) {
+  void _drawDashedLine(
+    Canvas canvas,
+    Offset p1,
+    Offset p2,
+    Paint paint,
+    double dashWidth,
+    double offset,
+  ) {
     final double dx = p2.dx - p1.dx;
     final double dy = p2.dy - p1.dy;
     final double distance = sqrt(dx * dx + dy * dy);
-    
+
     if (distance < 1.0) return;
 
     final double uX = dx / distance;
@@ -1153,6 +1450,8 @@ class ArPainter extends CustomPainter {
         oldDelegate.userPosition != userPosition ||
         oldDelegate.animationValue != animationValue ||
         oldDelegate.isFloorDetected != isFloorDetected ||
+        oldDelegate.isSimulatingWalk != isSimulatingWalk ||
+        oldDelegate.roadWaypoints.length != roadWaypoints.length ||
         oldDelegate.particleBursts.length != particleBursts.length;
   }
 }
@@ -1214,9 +1513,5 @@ class _Particle {
   final double radius;
   double opacity = 1.0;
 
-  _Particle({
-    required this.vx,
-    required this.vy,
-    required this.radius,
-  });
+  _Particle({required this.vx, required this.vy, required this.radius});
 }

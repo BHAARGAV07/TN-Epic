@@ -12,6 +12,7 @@ import '../models/destination.dart';
 import '../models/quest_save_state.dart';
 import '../state/quest_state.dart';
 import 'map_search_screen.dart';
+import 'ar_checkpoint_screen.dart';
 import 'road_view_screen.dart';
 
 class PlanTripScreen extends ConsumerStatefulWidget {
@@ -26,10 +27,8 @@ class _PlanTripScreenState extends ConsumerState<PlanTripScreen> {
   List<Destination> selectedDestinations = [];
   LatLng? currentLocation;
   bool _locationDeniedForever = false;
-  
-  QuestSaveState? _savedState;
-  bool _isStreakPreserved = false;
 
+  QuestSaveState? _savedState;
   @override
   void initState() {
     super.initState();
@@ -44,8 +43,6 @@ class _PlanTripScreenState extends ConsumerState<PlanTripScreen> {
       if (save != null) {
         setState(() {
           _savedState = save;
-          final diff = DateTime.now().difference(save.savedAt).inHours;
-          _isStreakPreserved = diff < 24;
         });
       }
     }
@@ -92,50 +89,44 @@ class _PlanTripScreenState extends ConsumerState<PlanTripScreen> {
     }
   }
 
-  void _startGame() {
-    if (selectedDestinations.isEmpty) {
-      return;
+  bool get _supportsNativeArCore =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+
+  Widget _buildQuestExperience({QuestSaveState? resumeState}) {
+    if (_supportsNativeArCore) {
+      return ARCheckpointScreen(resumeState: resumeState);
     }
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => RoadViewScreen(
-          startLocation: currentLocation ?? const LatLng(10.7828, 79.1318),
-          destinations: selectedDestinations,
-        ),
-      ),
+    return RoadViewScreen(
+      startLocation: currentLocation ?? const LatLng(10.7828, 79.1318),
+      destinations: selectedDestinations,
     );
   }
 
   void _startGameFresh() {
     ref.read(questSessionProvider.notifier).initNewSession();
-    
+
     // Clear save
     final box = Hive.box<QuestSaveState>('quest_saves');
     box.delete('heritage_corridor_quest');
-    
-    setState(() {
-      _savedState = null;
-      selectedDestinations.clear();
-      selectedDestinations.add(Destination(name: 'Corridor Checkpoint A', lat: 10.7828 + 0.0003, lng: 79.1318 + 0.0003));
-      selectedDestinations.add(Destination(name: 'Corridor Checkpoint B', lat: 10.7828 - 0.0002, lng: 79.1318 + 0.0004));
-    });
 
-    _startGame();
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => _buildQuestExperience(),
+      ),
+    );
   }
 
   void _resumeGame(QuestSaveState save) {
     ref.read(questSessionProvider.notifier).loadResumedSession(save);
-    
-    setState(() {
-      selectedDestinations.clear();
-      selectedDestinations.add(Destination(name: 'Corridor Checkpoint A', lat: 10.7828 + 0.0003, lng: 79.1318 + 0.0003));
-      selectedDestinations.add(Destination(name: 'Corridor Checkpoint B', lat: 10.7828 - 0.0002, lng: 79.1318 + 0.0004));
-      selectedDestinations.add(Destination(name: 'Chola Sanctuary Beacon', lat: 10.7828 - 0.0004, lng: 79.1318 - 0.0002));
-    });
 
-    _startGame();
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => _buildQuestExperience(resumeState: save),
+      ),
+    );
   }
 
   @override
@@ -210,8 +201,8 @@ class _PlanTripScreenState extends ConsumerState<PlanTripScreen> {
             ),
           ),
           _StickyStartArea(
-            selectedCount: selectedDestinations.length,
-            onStart: selectedDestinations.isEmpty ? null : _startGame,
+            onStartFresh: _startGameFresh,
+            onResume: _savedState != null ? () => _resumeGame(_savedState!) : null,
           ),
         ],
       ),
@@ -358,6 +349,24 @@ class _DestinationsMapCard extends StatefulWidget {
 
 class _DestinationsMapCardState extends State<_DestinationsMapCard> {
   final LatLng _fallback = const LatLng(10.7828, 79.1318);
+  AssetMapBitmap? _floorPlanImage;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadMapBitmap();
+  }
+
+  Future<void> _loadMapBitmap() async {
+    try {
+      final bmp = await AssetMapBitmap.create(
+        ImageConfiguration.empty,
+        'assets/floor_plan.png',
+        bitmapScaling: MapBitmapScaling.none,
+      );
+      if (mounted) setState(() => _floorPlanImage = bmp);
+    } catch (_) {}
+  }
 
   Set<Marker> _buildMarkers() {
     final markers = <Marker>{};
@@ -387,7 +396,7 @@ class _DestinationsMapCardState extends State<_DestinationsMapCard> {
       Polyline(
         polylineId: const PolylineId('route'),
         points: points,
-        color: const Color(0xFFFFB800),
+        color: AppColors.gold,
         width: 4,
       ),
     };
@@ -478,6 +487,14 @@ class _DestinationsMapCardState extends State<_DestinationsMapCard> {
                       },
                       markers: _buildMarkers(),
                       polylines: _buildRoutePolyline(),
+                      groundOverlays: _floorPlanImage == null ? {} : {
+                        GroundOverlay.fromPosition(
+                          groundOverlayId: const GroundOverlayId('floor_plan'),
+                          image: _floorPlanImage!,
+                          position: center,
+                          width: 100, // 100 meters wide
+                        ),
+                      },
                     ),
             ),
           ),
@@ -680,12 +697,12 @@ class _DestinationsMapCardState extends State<_DestinationsMapCard> {
 // }
 class _StickyStartArea extends StatelessWidget {
   const _StickyStartArea({
-    required this.selectedCount,
-    this.onStart,
+    required this.onStartFresh,
+    this.onResume,
   });
 
-  final int selectedCount;
-  final VoidCallback? onStart;
+  final VoidCallback onStartFresh;
+  final VoidCallback? onResume;
 
   @override
   Widget build(BuildContext context) {
@@ -697,42 +714,77 @@ class _StickyStartArea extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             GestureDetector(
-              onTap: onStart,
-              child: Opacity(
-                opacity: selectedCount > 0 ? 1.0 : 0.4,
+              onTap: onStartFresh,
+              child: Container(
+                width: double.infinity,
+                height: 56,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [AppColors.gold, AppColors.goldDark],
+                  ),
+                  borderRadius: BorderRadius.circular(28),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.gold.withOpacity(0.3),
+                      blurRadius: 20,
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(
+                      Icons.auto_awesome,
+                      color: AppColors.background,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'START FRESH',
+                      softWrap: true,
+                      overflow: TextOverflow.visible,
+                      style: GoogleFonts.inter(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 2,
+                        color: AppColors.background,
+                        fontFeatures: const [FontFeature.enable('kern')],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (onResume != null) ...[
+              const SizedBox(height: 12),
+              GestureDetector(
+                onTap: onResume,
                 child: Container(
                   width: double.infinity,
                   height: 56,
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [AppColors.gold, AppColors.goldDark],
-                    ),
+                    color: AppColors.statCard,
                     borderRadius: BorderRadius.circular(28),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.gold.withOpacity(0.3),
-                        blurRadius: 20,
-                      ),
-                    ],
+                    border: Border.all(color: AppColors.gold, width: 2),
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       const Icon(
-                        Icons.auto_awesome,
-                        color: AppColors.background,
+                        Icons.restore,
+                        color: AppColors.gold,
                         size: 20,
                       ),
                       const SizedBox(width: 8),
                       Text(
-                        'START GAME',
+                        'RESUME QUEST',
                         softWrap: true,
                         overflow: TextOverflow.visible,
                         style: GoogleFonts.inter(
                           fontSize: 15,
                           fontWeight: FontWeight.bold,
                           letterSpacing: 2,
-                          color: AppColors.background,
+                          color: AppColors.gold,
                           fontFeatures: const [FontFeature.enable('kern')],
                         ),
                       ),
@@ -740,23 +792,7 @@ class _StickyStartArea extends StatelessWidget {
                   ),
                 ),
               ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              selectedCount == 0
-                  ? 'Select at least one destination'
-                  : '$selectedCount destination(s) locked — Ready!',
-              textAlign: TextAlign.center,
-              softWrap: true,
-              overflow: TextOverflow.visible,
-              style: GoogleFonts.inter(
-                fontSize: 12,
-                color: selectedCount == 0
-                    ? AppColors.secondary
-                    : AppColors.gold,
-                fontFeatures: const [FontFeature.enable('kern')],
-              ),
-            ),
+            ],
           ],
         ),
       ),

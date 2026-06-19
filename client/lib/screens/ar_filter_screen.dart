@@ -51,7 +51,7 @@ class _ArFilterScreenState extends State<ArFilterScreen> {
               height: screenWidth * 0.82,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: const Color(0xFF1A1A2E),
+                color: AppColors.statCard,
                 border: Border.all(color: AppColors.gold, width: 2.5),
               ),
               child: const Icon(

@@ -11,6 +11,8 @@ import '../models/vector3.dart';
 import '../services/route_manager.dart';
 import '../state/app_state.dart';
 import '../widgets/ar_viewport.dart';
+import '../widgets/ar_premium_hud.dart';
+import '../widgets/ar_reward_notification.dart';
 
 class RoadViewScreen extends StatefulWidget {
   final LatLng startLocation;
@@ -26,11 +28,13 @@ class RoadViewScreen extends StatefulWidget {
   State<RoadViewScreen> createState() => _RoadViewScreenState();
 }
 
-class _RoadViewScreenState extends State<RoadViewScreen> with TickerProviderStateMixin {
+class _RoadViewScreenState extends State<RoadViewScreen>
+    with TickerProviderStateMixin {
   CameraController? _cameraController;
   Future<void>? _initializeCameraFuture;
 
   // VIO Cartesian coordinates
+  // User position at eye level (Z = 0) standing on ground, looking down at corridor (Z = -1.6)
   Vector3 _userPosition = const Vector3(0.0, 0.0, 0.0);
   final List<Vector3> _routeWaypoints = RouteManager.getCorridorRoute();
   final List<QuestNode> _questNodes = RouteManager.getCorridorQuestNodes();
@@ -77,7 +81,7 @@ class _RoadViewScreenState extends State<RoadViewScreen> with TickerProviderStat
       );
 
       _initializeCameraFuture = _cameraController!.initialize();
-      
+
       setState(() {
         _isLoading = false;
       });
@@ -106,7 +110,7 @@ class _RoadViewScreenState extends State<RoadViewScreen> with TickerProviderStat
     setState(() {
       _lastCollectedNode = node;
       _showCollectBanner = true;
-      
+
       // Update global game scores
       if (node.type == 'coin') {
         AppState.totalTokens += node.value;
@@ -172,6 +176,7 @@ class _RoadViewScreenState extends State<RoadViewScreen> with TickerProviderStat
     }
 
     return Scaffold(
+      backgroundColor: AppColors.background,
       body: Stack(
         children: [
           // 1. Full-screen Camera Stream
@@ -187,42 +192,56 @@ class _RoadViewScreenState extends State<RoadViewScreen> with TickerProviderStat
                 return Container(
                   color: Colors.black87,
                   child: const Center(
-                    child: Icon(Icons.camera_enhance, color: AppColors.secondary, size: 64),
+                    child: Icon(
+                      Icons.camera_enhance,
+                      color: AppColors.secondary,
+                      size: 64,
+                    ),
                   ),
                 );
               },
             ),
           ),
 
-          // 2. AR Viewport Core Canvas overlay
+          // LAYER 2: AR Viewport Core Canvas overlay
+          // CRITICAL: This owns the golden corridor and is kept below all UI overlays
+          // The golden path is rendered at 100% opacity and NEVER covered
           Positioned.fill(
-            child: ArViewport(
-              userPosition: _userPosition,
-              roadWaypoints: _routeWaypoints,
-              questNodes: _questNodes,
-              onCollectQuestNode: _onCollectNode,
-              onLocationChanged: _onLocationChanged,
-              isFloorDetected: _isFloorDetected,
-              scanProgress: _scanProgress,
+            child: RepaintBoundary(
+              child: ArViewport(
+                userPosition: _userPosition,
+                roadWaypoints: _routeWaypoints,
+                questNodes: _questNodes,
+                onCollectQuestNode: _onCollectNode,
+                onLocationChanged: _onLocationChanged,
+                isFloorDetected: _isFloorDetected,
+                scanProgress: _scanProgress,
+              ),
             ),
           ),
 
-          // 3. Sci-Fi HUD overlays
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: _buildHUDHeader(context),
+          // LAYER 4: Premium UI Overlays (never blocks path)
+          // Using proper z-order and IgnorePointer to ensure path visibility
+          ARPremiumHUD(
+            isFloorDetected: _isFloorDetected,
+            isSimulatingWalk: false,
+            scanProgress: _scanProgress,
+            userPosition: _userPosition,
+            roadWaypoints: _routeWaypoints,
+            collectedCoins: AppState.totalTokens,
+            dharmaScore: AppState.dharmaScore,
+            checkpointsCollected: _questNodes
+                .where((n) => n.type == 'save_point' && n.isCollected)
+                .length,
+            onStartSimulation: () {
+              setState(() {
+                // Start simulation is handled by ArViewport internally
+              });
+            },
           ),
 
-          // 4. Checkpoint Reward Banner (non-blocking — road stays visible)
-          if (_showCollectBanner && _lastCollectedNode != null)
-            Positioned(
-              top: 90,
-              left: 16,
-              right: 16,
-              child: _buildRewardBanner(_lastCollectedNode!),
-            ),
+          // Reward notifications (non-blocking, above HUD)
+          RewardNotificationManager(collectedNodes: _questNodes),
         ],
       ),
     );
@@ -230,21 +249,22 @@ class _RoadViewScreenState extends State<RoadViewScreen> with TickerProviderStat
 
   Widget _buildHUDHeader(BuildContext context) {
     // Calculate distance remaining to final waypoint
-    final endPoint = _routeWaypoints.isNotEmpty ? _routeWaypoints.last : const Vector3(12.0, 12.0, -1.6);
+    final endPoint = _routeWaypoints.isNotEmpty
+        ? _routeWaypoints.last
+        : const Vector3(12.0, 12.0, -1.6);
     final distRemaining = _userPosition.distanceTo(endPoint);
-    
+
     // Count collected save points
-    final checkpointsCollected = _questNodes.where((n) => n.type == 'save_point' && n.isCollected).length;
+    final checkpointsCollected = _questNodes
+        .where((n) => n.type == 'save_point' && n.isCollected)
+        .length;
 
     return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [
-            Colors.black.withOpacity(0.8),
-            Colors.transparent,
-          ],
+          colors: [AppColors.background.withOpacity(0.46), Colors.transparent],
         ),
       ),
       padding: EdgeInsets.only(
@@ -266,11 +286,15 @@ class _RoadViewScreenState extends State<RoadViewScreen> with TickerProviderStat
                   width: 44,
                   height: 44,
                   decoration: BoxDecoration(
-                    color: AppColors.background.withOpacity(0.75),
+                    color: AppColors.background.withOpacity(0.56),
                     shape: BoxShape.circle,
                     border: Border.all(color: AppColors.navBorder, width: 1.5),
                   ),
-                  child: const Icon(Icons.arrow_back_rounded, color: Colors.white, size: 20),
+                  child: const Icon(
+                    Icons.arrow_back_rounded,
+                    color: Colors.white,
+                    size: 20,
+                  ),
                 ),
               ),
 
@@ -280,7 +304,7 @@ class _RoadViewScreenState extends State<RoadViewScreen> with TickerProviderStat
                   height: 44,
                   margin: const EdgeInsets.symmetric(horizontal: 12),
                   decoration: BoxDecoration(
-                    color: AppColors.background.withOpacity(0.75),
+                    color: AppColors.background.withOpacity(0.56),
                     borderRadius: BorderRadius.circular(22),
                     border: Border.all(color: AppColors.navBorder, width: 1.5),
                   ),
@@ -290,15 +314,23 @@ class _RoadViewScreenState extends State<RoadViewScreen> with TickerProviderStat
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(
-                        _isFloorDetected ? Icons.check_circle_outline_rounded : Icons.sync,
-                        color: _isFloorDetected ? Colors.cyanAccent : AppColors.gold,
+                        _isFloorDetected
+                            ? Icons.check_circle_outline_rounded
+                            : Icons.sync,
+                        color: _isFloorDetected
+                            ? Colors.cyanAccent
+                            : AppColors.gold,
                         size: 16,
                       ),
                       const SizedBox(width: 8),
                       Text(
-                        _isFloorDetected ? 'FLOOR TRACKED • INDOOR AR' : 'CALIBRATING AR VIO...',
+                        _isFloorDetected
+                            ? 'FLOOR TRACKED • INDOOR AR'
+                            : 'CALIBRATING AR VIO...',
                         style: GoogleFonts.inter(
-                          color: _isFloorDetected ? Colors.cyanAccent : AppColors.gold,
+                          color: _isFloorDetected
+                              ? Colors.cyanAccent
+                              : AppColors.gold,
                           fontSize: 10,
                           fontWeight: FontWeight.w800,
                           letterSpacing: 1.2,
@@ -314,13 +346,17 @@ class _RoadViewScreenState extends State<RoadViewScreen> with TickerProviderStat
                 height: 44,
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 decoration: BoxDecoration(
-                  color: AppColors.background.withOpacity(0.75),
+                  color: AppColors.background.withOpacity(0.56),
                   borderRadius: BorderRadius.circular(22),
                   border: Border.all(color: AppColors.navBorder, width: 1.5),
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.monetization_on_rounded, color: AppColors.gold, size: 18),
+                    const Icon(
+                      Icons.monetization_on_rounded,
+                      color: AppColors.gold,
+                      size: 18,
+                    ),
                     const SizedBox(width: 6),
                     Text(
                       '${AppState.totalTokens}',
@@ -331,7 +367,11 @@ class _RoadViewScreenState extends State<RoadViewScreen> with TickerProviderStat
                       ),
                     ),
                     const SizedBox(width: 12),
-                    const Icon(Icons.offline_bolt_rounded, color: Colors.cyanAccent, size: 18),
+                    const Icon(
+                      Icons.offline_bolt_rounded,
+                      color: Colors.cyanAccent,
+                      size: 18,
+                    ),
                     const SizedBox(width: 6),
                     Text(
                       '${AppState.dharmaScore}',
@@ -346,7 +386,7 @@ class _RoadViewScreenState extends State<RoadViewScreen> with TickerProviderStat
               ),
             ],
           ),
-          
+
           // Additional Corridor navigation telemetry overlay
           if (_isFloorDetected) ...[
             const SizedBox(height: 12),
@@ -355,15 +395,22 @@ class _RoadViewScreenState extends State<RoadViewScreen> with TickerProviderStat
               children: [
                 // Distance to Destination
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
-                    color: AppColors.background.withOpacity(0.75),
+                    color: AppColors.background.withOpacity(0.54),
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(color: AppColors.navBorder, width: 1.0),
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.flag_outlined, color: Colors.cyanAccent, size: 14),
+                      const Icon(
+                        Icons.flag_outlined,
+                        color: Colors.cyanAccent,
+                        size: 14,
+                      ),
                       const SizedBox(width: 6),
                       Text(
                         'Destination: ${distRemaining.toStringAsFixed(1)}m',
@@ -378,15 +425,22 @@ class _RoadViewScreenState extends State<RoadViewScreen> with TickerProviderStat
                 ),
                 // Checkpoint progress
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
-                    color: AppColors.background.withOpacity(0.75),
+                    color: AppColors.background.withOpacity(0.54),
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(color: AppColors.navBorder, width: 1.0),
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.security, color: AppColors.gold, size: 14),
+                      const Icon(
+                        Icons.security,
+                        color: AppColors.gold,
+                        size: 14,
+                      ),
                       const SizedBox(width: 6),
                       Text(
                         'Checkpoints: $checkpointsCollected/2',
@@ -435,23 +489,23 @@ class _RoadViewScreenState extends State<RoadViewScreen> with TickerProviderStat
         : (isCoin ? '+${(node.value * 1.5).round()} Dharma' : '+120 Dharma');
 
     return SlideTransition(
-      position: Tween<Offset>(
-        begin: const Offset(0, -1.5),
-        end: Offset.zero,
-      ).animate(CurvedAnimation(
-        parent: _bannerAnimationController,
-        curve: Curves.elasticOut,
-      )),
+      position: Tween<Offset>(begin: const Offset(0, -1.5), end: Offset.zero)
+          .animate(
+            CurvedAnimation(
+              parent: _bannerAnimationController,
+              curve: Curves.elasticOut,
+            ),
+          ),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
-          color: AppColors.background.withOpacity(0.92),
+          color: AppColors.background.withOpacity(0.64),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(color: glowColor, width: 2.0),
           boxShadow: [
             BoxShadow(
-              color: glowColor.withOpacity(0.45),
-              blurRadius: 20,
+              color: glowColor.withOpacity(0.36),
+              blurRadius: 24,
               spreadRadius: 1,
             ),
           ],
@@ -510,7 +564,11 @@ class _RoadViewScreenState extends State<RoadViewScreen> with TickerProviderStat
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.monetization_on_rounded, color: AppColors.gold, size: 14),
+                      const Icon(
+                        Icons.monetization_on_rounded,
+                        color: AppColors.gold,
+                        size: 14,
+                      ),
                       const SizedBox(width: 4),
                       Text(
                         '+${node.value}',
@@ -526,7 +584,11 @@ class _RoadViewScreenState extends State<RoadViewScreen> with TickerProviderStat
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.offline_bolt_rounded, color: Colors.cyanAccent, size: 14),
+                    const Icon(
+                      Icons.offline_bolt_rounded,
+                      color: Colors.cyanAccent,
+                      size: 14,
+                    ),
                     const SizedBox(width: 4),
                     Text(
                       dharmaText,

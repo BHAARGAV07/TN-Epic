@@ -22,8 +22,15 @@ class BleService {
   bool _isScanning = false;
   StreamSubscription? _scanSubscription;
 
+  bool get _supportsNativeBle =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS);
+
   void startScanning() async {
     if (_isScanning) return;
+    if (!_supportsNativeBle) return;
+
     _isScanning = true;
 
     try {
@@ -75,6 +82,8 @@ class BleService {
     _isScanning = false;
     _scanSubscription?.cancel();
     _scanSubscription = null;
+    if (!_supportsNativeBle) return;
+
     try {
       await FlutterBluePlus.stopScan();
     } catch (e) {
